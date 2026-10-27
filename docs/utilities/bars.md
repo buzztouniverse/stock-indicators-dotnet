@@ -7,6 +7,24 @@ description: Utilities for preparing and transforming historical price bars befo
 
 Utilities for preparing and transforming historical price bars before using them with indicators.
 
+## Load bars from CSV
+
+`Bar.FromCsv()` reads a CSV file of date, open, high, low, close, and volume columns, and `Bar.FromCsvAsync()` downloads one. Both return bars sorted by `Timestamp`, ready for any indicator. Use them for quick starts, examples, and tests; in production, load bars from your data provider.
+
+```csharp
+// from a local file
+IReadOnlyList<Bar> bars = Bar.FromCsv("bars.csv");
+
+// from a URL
+IReadOnlyList<Bar> msft = await Bar.FromCsvAsync(
+  new Uri("https://raw.githubusercontent.com/facioquo/stock-indicators-dotnet/main/tests/Library/TestData/quotes/msft.csv"));
+```
+
+- Values are read with the invariant culture, so dates such as `2017-01-03` or `1/3/2017` (month first) and `.` decimal separators work.
+- A first row that does not start with a date is read as a header, and its columns must be `date` (or `timestamp`), `open`, `high`, `low`, `close`, `volume`, in that order.
+- Blank lines are skipped. A row with the wrong number of columns, or a value that does not parse, throws a `FormatException` that names the line.
+- `FromCsvAsync()` takes an optional `HttpClient` and `CancellationToken`; without a client, it uses one shared across calls.
+
 ## Use alternate price
 
 `bars.Use()` selects which price element to analyze before most indicator calls — for example the median (`HL2`) or typical (`HLC3`) price instead of `Close`. It cannot be used with indicators that require the full OHLCV bar profile.
