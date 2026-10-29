@@ -14,6 +14,11 @@ public partial class Bars : TestBase
         "2017-01-03,212.61,213.35,211.52,212.8,96708880"
     ];
 
+    private static readonly Bar[] csvBars = [
+        new(new DateTime(2017, 1, 3), 212.61m, 213.35m, 211.52m, 212.8m, 96708880m),
+        new(new DateTime(2017, 1, 4), 213.16m, 214.22m, 213.15m, 214.06m, 83348752m)
+    ];
+
     [TestMethod]
     public void FromCsv()
     {
@@ -44,9 +49,7 @@ public partial class Bars : TestBase
             .ConfigureAwait(true);
 
         handler.RequestUri.Should().Be(uri);
-        bars.Should().HaveCount(2);
-        bars[0].Should().Be(new Bar(new DateTime(2017, 1, 3), 212.61m, 213.35m, 211.52m, 212.8m, 96708880m));
-        bars[1].Timestamp.Should().Be(new DateTime(2017, 1, 4));
+        bars.Should().Equal(csvBars);
     }
 
     [TestMethod]
@@ -54,7 +57,7 @@ public partial class Bars : TestBase
     {
         IReadOnlyList<Bar> bars = Bar.ParseCsv(csvRows.Skip(1));
 
-        bars.Should().Equal(Bar.ParseCsv(csvRows));
+        bars.Should().Equal(csvBars);
     }
 
     [TestMethod]
@@ -62,7 +65,7 @@ public partial class Bars : TestBase
     {
         IReadOnlyList<Bar> bars = Bar.ParseCsv(["", csvRows[0], "  ", csvRows[1], "", csvRows[2], ""]);
 
-        bars.Should().Equal(Bar.ParseCsv(csvRows));
+        bars.Should().Equal(csvBars);
     }
 
     [TestMethod]
@@ -70,7 +73,25 @@ public partial class Bars : TestBase
     {
         IReadOnlyList<Bar> bars = Bar.ParseCsv(["Timestamp,Open,High,Low,Close,Volume", csvRows[1]]);
 
-        bars.Should().ContainSingle();
+        bars.Should().Equal(csvBars[1]);
+    }
+
+    [TestMethod]
+    public void FromCsvWithUtcAndOffsetTimestamps()
+    {
+        IReadOnlyList<Bar> bars = Bar.ParseCsv([
+            "2017-01-03T00:00:00Z,212.61,213.35,211.52,212.8,96708880",
+            "2017-01-04T09:30:00+05:00,213.16,214.22,213.15,214.06,83348752",
+            "2017-01-05,214.75,216.05,213.81,215.62,83348752"
+        ]);
+
+        // DateTime equality ignores Kind, so check it separately
+        bars[0].Timestamp.Should().Be(new DateTime(2017, 1, 3, 0, 0, 0, DateTimeKind.Utc));
+        bars[0].Timestamp.Kind.Should().Be(DateTimeKind.Utc);
+        bars[1].Timestamp.Should().Be(new DateTime(2017, 1, 4, 4, 30, 0, DateTimeKind.Utc));
+        bars[1].Timestamp.Kind.Should().Be(DateTimeKind.Utc);
+        bars[2].Timestamp.Should().Be(new DateTime(2017, 1, 5));
+        bars[2].Timestamp.Kind.Should().Be(DateTimeKind.Unspecified);
     }
 
     [TestMethod]
@@ -79,7 +100,33 @@ public partial class Bars : TestBase
             .Invoking(static () => Bar.ParseCsv(["date,open,low,high,close,volume", csvRows[1]]))
             .Should()
             .ThrowExactly<FormatException>()
-            .WithMessage("*not in date, open, high, low, close, volume order*");
+            .WithMessage("CSV line 1 was read as a header*not in date, open, high, low, close, volume order.");
+
+    [TestMethod]
+    public void FromCsvWithWrongHeaderDateColumn()
+        => FluentActions
+            .Invoking(static () => Bar.ParseCsv(["time,open,high,low,close,volume", csvRows[1]]))
+            .Should()
+            .ThrowExactly<FormatException>()
+            .WithMessage("CSV line 1 was read as a header because 'time' is not a date*");
+
+    [TestMethod]
+    public void FromCsvWithMissingHeaderColumn()
+        => FluentActions
+            .Invoking(static () => Bar.ParseCsv(["date,open,high,low,close", csvRows[1]]))
+            .Should()
+            .ThrowExactly<FormatException>()
+            .WithMessage("CSV line 1 has 5 columns*");
+
+    [TestMethod]
+    public void FromCsvWithBadDateOnFirstRow()
+        => FluentActions
+            .Invoking(static () => Bar.ParseCsv(["2017-13-45,212.61,213.35,211.52,212.8,96708880", csvRows[1]]))
+            .Should()
+            .ThrowExactly<FormatException>()
+            .WithMessage(
+                "CSV line 1 was read as a header because '2017-13-45' is not a date, "
+              + "but '2017-13-45,212.61,213.35,211.52,212.8,96708880' is not in date, open, high, low, close, volume order.");
 
     [TestMethod]
     public void FromCsvWithMissingColumn()
@@ -90,12 +137,22 @@ public partial class Bars : TestBase
             .WithMessage("CSV line 3 has 5 columns*");
 
     [TestMethod]
-    public void FromCsvWithBadValue()
-        => FluentActions
-            .Invoking(static () => Bar.ParseCsv([csvRows[0], "2017-01-05,214.75,216.05,213.81,n/a,83348752"]))
+    [DataRow("open")]
+    [DataRow("high")]
+    [DataRow("low")]
+    [DataRow("close")]
+    [DataRow("volume")]
+    public void FromCsvWithBadValue(string name)
+    {
+        string[] fields = csvRows[1].Split(',');
+        fields[Array.IndexOf(csvRows[0].Split(','), name)] = "n/a";
+
+        FluentActions
+            .Invoking(() => Bar.ParseCsv([csvRows[0], string.Join(',', fields)]))
             .Should()
             .ThrowExactly<FormatException>()
-            .WithMessage("CSV line 2 has an invalid close value 'n/a'.");
+            .WithMessage($"CSV line 2 has an invalid {name} value 'n/a'.");
+    }
 
     [TestMethod]
     public void FromCsvWithBadDate()

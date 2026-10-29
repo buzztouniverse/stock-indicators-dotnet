@@ -17,10 +17,11 @@ IReadOnlyList<Bar> bars = Bar.FromCsv("bars.csv");
 
 // from a URL
 IReadOnlyList<Bar> msft = await Bar.FromCsvAsync(
-  new Uri("https://raw.githubusercontent.com/facioquo/stock-indicators-dotnet/main/tests/Library/TestData/quotes/msft.csv"));
+  new Uri("https://example.com/msft.csv"));
 ```
 
 - Values are read with the invariant culture, so dates such as `2017-01-03` or `1/3/2017` (month first) and `.` decimal separators work.
+- Timestamps with an offset or `Z`, such as `2017-01-03T09:30:00-05:00`, are converted to UTC. Timestamps without one are kept as written, so results don't depend on the machine's time zone.
 - A first row that does not start with a date is read as a header, and its columns must be `date` (or `timestamp`), `open`, `high`, `low`, `close`, `volume`, in that order.
 - Blank lines are skipped. A row with the wrong number of columns, or a value that does not parse, throws a `FormatException` that names the line.
 - `FromCsvAsync()` takes an optional `HttpClient` and `CancellationToken`; without a client, it uses one shared across calls.
